@@ -1,0 +1,352 @@
+<div class="sa-page">
+
+  <!-- Header -->
+  <header class="sa-header">
+    <div class="sa-header-left">
+      <h1 class="sa-title">Story Agent</h1>
+      <p class="sa-subtitle">Auto-generate Angular components from Azure DevOps work items</p>
+    </div>
+    <button *ngIf="state === 'done'" mat-button class="sa-btn sa-btn--ghost" (click)="reset()">
+      <span class="material-icons">refresh</span>
+      New Story
+    </button>
+  </header>
+
+  <!-- Pipeline stage strip -->
+  <div class="sa-stage-strip" *ngIf="state !== 'idle'">
+    <div class="sa-stage-step" [class.active]="stageIndex >= 1" [class.done]="stageIndex > 1">
+      <div class="sa-stage-dot">
+        <span class="material-icons" *ngIf="stageIndex > 1">check</span>
+        <span class="sa-stage-pulse" *ngIf="stageIndex === 1"></span>
+      </div>
+      <span>Fetch &amp; Parse</span>
+    </div>
+    <div class="sa-stage-connector" [class.done]="stageIndex > 1"></div>
+    <div class="sa-stage-step" [class.active]="stageIndex >= 2" [class.done]="stageIndex > 2">
+      <div class="sa-stage-dot">
+        <span class="material-icons" *ngIf="stageIndex > 2">check</span>
+        <span class="sa-stage-pulse" *ngIf="stageIndex === 2 && running"></span>
+      </div>
+      <span>Generate &amp; Review</span>
+    </div>
+    <div class="sa-stage-connector" [class.done]="stageIndex > 2"></div>
+    <div class="sa-stage-step" [class.active]="stageIndex >= 3" [class.done]="stageIndex > 3">
+      <div class="sa-stage-dot">
+        <span class="material-icons" *ngIf="stageIndex > 3">check</span>
+        <span class="sa-stage-pulse" *ngIf="stageIndex === 3 && running"></span>
+      </div>
+      <span>Save / PR</span>
+    </div>
+    <div class="sa-stage-connector" [class.done]="stageIndex > 3"></div>
+    <div class="sa-stage-step" [class.active]="stageIndex >= 4" [class.done]="stageIndex === 4">
+      <div class="sa-stage-dot">
+        <span class="material-icons" *ngIf="stageIndex === 4">check</span>
+      </div>
+      <span>Done</span>
+    </div>
+  </div>
+
+  <!-- Input card -->
+  <section class="sa-card sa-input-card" *ngIf="state !== 'done'">
+    <div class="sa-card-body">
+      <label class="sa-label">Azure DevOps Story ID</label>
+      <div class="sa-input-row">
+        <div class="sa-input-group" [class.is-disabled]="running || state === 'confirm'">
+          <span class="sa-input-prefix material-icons">tag</span>
+          <input
+            class="sa-input"
+            type="text"
+            placeholder="e.g. 10007"
+            [(ngModel)]="storyId"
+            (keyup.enter)="run()"
+            [disabled]="running || state === 'confirm'"
+            autocomplete="off"
+          />
+        </div>
+        <button
+          mat-button
+          class="sa-btn sa-btn--primary"
+          (click)="run()"
+          [disabled]="running || !storyId.trim() || state === 'confirm'">
+          <mat-spinner *ngIf="running && state === 'preparing'" [diameter]="18" class="sa-spinner"></mat-spinner>
+          <span class="material-icons" *ngIf="!running || state !== 'preparing'">rocket_launch</span>
+          {{ (running && state === 'preparing') ? 'Running...' : 'Run Pipeline' }}
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Progress & logs -->
+  <section class="sa-card sa-log-card"
+           *ngIf="statusMessages.length || running || error">
+    <div class="sa-card-header">
+      <span class="material-icons sa-card-icon">terminal</span>
+      <span class="sa-card-title">Pipeline Log</span>
+      <mat-progress-bar
+        *ngIf="running"
+        mode="indeterminate"
+        class="sa-progress"
+      ></mat-progress-bar>
+    </div>
+    <div class="sa-card-body">
+      <ul class="sa-log-list">
+        <li *ngFor="let msg of statusMessages; let i = index" class="sa-log-item">
+          <span class="sa-log-idx">{{ i + 1 }}</span>
+          <span class="sa-log-check material-icons">check_circle</span>
+          <span class="sa-log-text">{{ msg }}</span>
+        </li>
+        <li *ngIf="running" class="sa-log-item sa-log-item--active">
+          <span class="sa-log-idx">{{ statusMessages.length + 1 }}</span>
+          <span class="sa-log-spin">
+            <span class="sa-dot-pulse"></span>
+          </span>
+          <span class="sa-log-text">Processing...</span>
+        </li>
+      </ul>
+
+      <div *ngIf="error" class="sa-error">
+        <span class="material-icons">error_outline</span>
+        <span class="sa-error-text">{{ error }}</span>
+        <button mat-icon-button class="sa-error-dismiss" (click)="error = ''" matTooltip="Dismiss">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Confirmation panel -->
+  <ng-container *ngIf="state === 'confirm' || state === 'saving' || state === 'saved' || state === 'submitting'">
+
+    <!-- Summary strip -->
+    <div class="sa-summary-strip">
+      <div class="sa-summary-item">
+        <span class="sa-summary-icon material-icons">{{ intentIcon(intent) }}</span>
+        <div>
+          <p class="sa-summary-key">Intent</p>
+          <p class="sa-summary-val">{{ intentLabel(intent) }}</p>
+        </div>
+      </div>
+      <div class="sa-summary-divider"></div>
+      <div class="sa-summary-item">
+        <span class="sa-summary-icon material-icons">widgets</span>
+        <div>
+          <p class="sa-summary-key">Component</p>
+          <p class="sa-summary-val mono">{{ componentName }}</p>
+        </div>
+      </div>
+      <div class="sa-summary-divider"></div>
+      <div class="sa-summary-item">
+        <span class="sa-summary-icon material-icons">account_tree</span>
+        <div>
+          <p class="sa-summary-key">Branch</p>
+          <p class="sa-summary-val mono">
+            {{ branchName }}
+            <button mat-icon-button class="sa-copy-inline" (click)="copyBranchName()" matTooltip="Copy">
+              <span class="material-icons">content_copy</span>
+            </button>
+          </p>
+        </div>
+      </div>
+      <div class="sa-summary-divider"></div>
+      <div class="sa-summary-item">
+        <span class="sa-summary-icon material-icons"
+              [class.confidence-high]="scannerConfidence >= 0.8"
+              [class.confidence-mid]="scannerConfidence >= 0.5 && scannerConfidence < 0.8"
+              [class.confidence-low]="scannerConfidence < 0.5">
+          {{ scannerConfidence >= 0.8 ? 'verified' : 'warning_amber' }}
+        </span>
+        <div>
+          <p class="sa-summary-key">Confidence</p>
+          <p class="sa-summary-val">{{ confidencePercent }}%</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scanner warning -->
+    <div *ngIf="scannerFoundExisting && scannerConfidence < 0.8" class="sa-warning-banner">
+      <span class="material-icons">warning_amber</span>
+      <span>
+        Scanner matched <code>{{ resolvedTsPath }}</code> at {{ confidencePercent }}% confidence
+        ({{ scannerReason }}). Verify or override.
+      </span>
+      <button mat-button class="sa-btn sa-btn--ghost sa-btn--sm" (click)="togglePathOverride()">
+        {{ showPathOverride ? 'Hide override' : 'Override path' }}
+      </button>
+    </div>
+
+    <!-- Path override -->
+    <div *ngIf="showPathOverride" class="sa-card sa-card--inset">
+      <div class="sa-card-body">
+        <label class="sa-label">Override .ts file path</label>
+        <div class="sa-input-group">
+          <span class="sa-input-prefix material-icons">edit</span>
+          <input class="sa-input" [(ngModel)]="manualTsPath"
+                 placeholder="src/app/feature/component/component.component.ts" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Validation warnings -->
+    <div *ngIf="validationIssues.length" class="sa-validation-box">
+      <p class="sa-validation-title">
+        <span class="material-icons">shield_with_warning</span>
+        Validation warnings
+      </p>
+      <ul class="sa-validation-list">
+        <li *ngFor="let issue of validationIssues">{{ issue }}</li>
+      </ul>
+    </div>
+
+    <!-- Code preview -->
+    <section class="sa-card sa-code-card">
+      <div class="sa-code-header">
+        <div class="sa-code-tabs">
+          <ng-container *ngFor="let tab of tabs">
+            <button
+              *ngIf="tab.key === 'ts' || (tab.key === 'html' && output?.componentHtml) || (tab.key === 'scss' && output?.componentScss) || (tab.key === 'spec' && output?.specTs)"
+              class="sa-code-tab"
+              [class.active]="selectedTab === tab.key"
+              (click)="selectTab(tab.key)">
+              <span class="material-icons sa-tab-icon">{{ tab.icon }}</span>
+              <span>{{ tab.label }}</span>
+              <span class="sa-tab-ext">{{ tab.ext }}</span>
+            </button>
+          </ng-container>
+        </div>
+        <button mat-button class="sa-btn sa-btn--ghost sa-btn--sm" (click)="copyActiveCode()" matTooltip="Copy code">
+          <span class="material-icons">content_copy</span>
+          Copy
+        </button>
+      </div>
+      <div class="sa-code-body">
+        <pre class="sa-code-block"><code>{{ activeCode }}</code></pre>
+      </div>
+    </section>
+
+    <!-- File path row -->
+    <div class="sa-file-row">
+      <span class="material-icons sa-file-icon">insert_drive_file</span>
+      <span class="sa-file-path mono">{{ resolvedTsPath || 'path not resolved' }}</span>
+      <button mat-icon-button class="sa-copy-inline" (click)="copyFilePath()" matTooltip="Copy path">
+        <span class="material-icons">content_copy</span>
+      </button>
+    </div>
+
+    <!-- Action bar -->
+    <div class="sa-action-bar">
+      <button mat-button class="sa-btn sa-btn--ghost" (click)="cancel()" [disabled]="running">
+        <span class="material-icons">close</span>
+        Cancel
+      </button>
+      <button mat-button class="sa-btn sa-btn--outline" (click)="downloadAll()">
+        <span class="material-icons">download</span>
+        Download
+      </button>
+      <button mat-button class="sa-btn sa-btn--secondary" (click)="saveLocally()"
+              [disabled]="running">
+        <mat-spinner *ngIf="state === 'saving'" [diameter]="16" class="sa-spinner"></mat-spinner>
+        <span class="material-icons" *ngIf="state !== 'saving'">save</span>
+        {{ state === 'saving' ? 'Saving...' : 'Save to Project' }}
+      </button>
+      <button mat-button class="sa-btn sa-btn--primary" (click)="confirm()"
+              [disabled]="running"
+              matTooltip="Create draft PR on Azure DevOps">
+        <mat-spinner *ngIf="state === 'submitting'" [diameter]="16" class="sa-spinner"></mat-spinner>
+        <span class="material-icons" *ngIf="state !== 'submitting'">merge_type</span>
+        {{ state === 'submitting' ? 'Creating PR...' : 'Create PR' }}
+      </button>
+    </div>
+  </ng-container>
+
+  <!-- Saved state files list -->
+  <section *ngIf="state === 'saved'" class="sa-card sa-saved-card">
+    <div class="sa-card-body">
+      <div class="sa-saved-header">
+        <span class="material-icons sa-saved-icon">task_alt</span>
+        <div>
+          <p class="sa-saved-title">Files saved to project</p>
+          <p class="sa-saved-hint">Review in your IDE, then optionally create a PR above.</p>
+        </div>
+      </div>
+      <ul class="sa-saved-files">
+        <li *ngFor="let f of localWriteResult?.filesWritten" class="sa-saved-file">
+          <span class="material-icons">insert_drive_file</span>
+          <span class="mono">{{ f }}</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Done state -->
+  <section *ngIf="state === 'done'" class="sa-card sa-done-card">
+    <div class="sa-card-body sa-done-body">
+      <div class="sa-done-icon-wrap">
+        <span class="material-icons sa-done-icon">check_circle</span>
+      </div>
+      <h2 class="sa-done-title">Pull Request Created</h2>
+      <p class="sa-done-subtitle">Review, approve and merge when ready.</p>
+      <a [href]="prUrl" target="_blank" rel="noopener noreferrer" class="sa-pr-link">
+        <span class="material-icons">call_merge</span>
+        <span>View Pull Request</span>
+        <span class="material-icons sa-pr-arrow">open_in_new</span>
+      </a>
+      <div class="sa-done-meta" *ngIf="pipelineResult">
+        <span class="sa-meta-chip">
+          <span class="material-icons">account_tree</span>
+          {{ pipelineResult.sourceBranch }}
+        </span>
+        <span class="material-icons sa-meta-arrow">arrow_forward</span>
+        <span class="sa-meta-chip">
+          <span class="material-icons">merge_type</span>
+          {{ pipelineResult.targetBranch }}
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Empty state -->
+  <section class="sa-empty" *ngIf="state === 'idle' && !statusMessages.length && !error">
+    <div class="sa-empty-grid">
+      <div class="sa-empty-step">
+        <div class="sa-empty-icon-wrap sa-empty-icon-wrap--1">
+          <span class="material-icons">cloud_download</span>
+        </div>
+        <p class="sa-empty-num">01</p>
+        <p class="sa-empty-label">Fetch work item from Azure DevOps</p>
+      </div>
+      <div class="sa-empty-connector"><span class="material-icons">east</span></div>
+      <div class="sa-empty-step">
+        <div class="sa-empty-icon-wrap sa-empty-icon-wrap--2">
+          <span class="material-icons">psychology</span>
+        </div>
+        <p class="sa-empty-num">02</p>
+        <p class="sa-empty-label">Detect intent &amp; parse requirements</p>
+      </div>
+      <div class="sa-empty-connector"><span class="material-icons">east</span></div>
+      <div class="sa-empty-step">
+        <div class="sa-empty-icon-wrap sa-empty-icon-wrap--3">
+          <span class="material-icons">style</span>
+        </div>
+        <p class="sa-empty-num">03</p>
+        <p class="sa-empty-label">Match Figma design tokens</p>
+      </div>
+      <div class="sa-empty-connector"><span class="material-icons">east</span></div>
+      <div class="sa-empty-step">
+        <div class="sa-empty-icon-wrap sa-empty-icon-wrap--4">
+          <span class="material-icons">auto_awesome</span>
+        </div>
+        <p class="sa-empty-num">04</p>
+        <p class="sa-empty-label">Generate &amp; validate code with AI</p>
+      </div>
+      <div class="sa-empty-connector"><span class="material-icons">east</span></div>
+      <div class="sa-empty-step">
+        <div class="sa-empty-icon-wrap sa-empty-icon-wrap--5">
+          <span class="material-icons">merge_type</span>
+        </div>
+        <p class="sa-empty-num">05</p>
+        <p class="sa-empty-label">Save locally or open draft PR</p>
+      </div>
+    </div>
+  </section>
+
+</div>

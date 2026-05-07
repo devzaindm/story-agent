@@ -1,0 +1,32 @@
+<div class="sh-root">
+
+  <!-- Sidebar -->
+  <aside class="sh-sidebar">
+    <div class="sh-logo">
+      <span class="sh-logo-icon material-icons">smart_toy</span>
+      <span class="sh-logo-text">Story Agent</span>
+    </div>
+
+    <nav class="sh-nav">
+      <a class="sh-nav-item" routerLink="/generate" routerLinkActive="active">
+        <span class="material-icons">auto_awesome</span>
+        <span>Generate</span>
+      </a>
+      <a class="sh-nav-item" routerLink="/dashboard" routerLinkActive="active">
+        <span class="material-icons">dashboard</span>
+        <span>Dashboard</span>
+      </a>
+    </nav>
+
+    <div class="sh-sidebar-footer">
+      <span class="sh-badge">v2.0</span>
+      <span class="sh-footer-label">DM Clinical</span>
+    </div>
+  </aside>
+
+  <!-- Main area -->
+  <main class="sh-main">
+    <router-outlet />
+  </main>
+
+</div>

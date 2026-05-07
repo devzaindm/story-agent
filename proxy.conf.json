@@ -1,0 +1,9 @@
+{
+  "/anthropic-api": {
+    "target": "https://api.anthropic.com",
+    "secure": true,
+    "changeOrigin": true,
+    "pathRewrite": { "^/anthropic-api": "" },
+    "logLevel": "warn"
+  }
+}

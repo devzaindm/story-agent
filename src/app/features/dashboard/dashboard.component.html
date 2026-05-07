@@ -1,0 +1,332 @@
+<div class="db-root">
+
+  <!-- Loading overlay -->
+  <div class="db-loading" *ngIf="loading">
+    <mat-spinner [diameter]="48"></mat-spinner>
+    <p>Loading Azure DevOps data...</p>
+  </div>
+
+  <!-- Error -->
+  <div class="db-error" *ngIf="!loading && error">
+    <span class="material-icons">error_outline</span>
+    <div>
+      <p class="db-error-title">Failed to load dashboard</p>
+      <p class="db-error-text">{{ error }}</p>
+    </div>
+    <button mat-button class="db-btn db-btn--ghost" (click)="load()">
+      <span class="material-icons">refresh</span>
+      Retry
+    </button>
+  </div>
+
+  <ng-container *ngIf="!loading && !error">
+
+    <!-- ── KPI row ───────────────────────────────────────────────────────── -->
+    <div class="db-kpi-row">
+
+      <div class="db-kpi-card">
+        <div class="db-kpi-icon db-kpi-icon--blue">
+          <span class="material-icons">assignment_ind</span>
+        </div>
+        <div>
+          <p class="db-kpi-num">{{ myItems.length }}</p>
+          <p class="db-kpi-label">My Open Items</p>
+        </div>
+      </div>
+
+      <div class="db-kpi-card">
+        <div class="db-kpi-icon db-kpi-icon--purple">
+          <span class="material-icons">sprint</span>
+        </div>
+        <div>
+          <p class="db-kpi-num">{{ sprint.total }}</p>
+          <p class="db-kpi-label">Sprint Items</p>
+        </div>
+      </div>
+
+      <div class="db-kpi-card">
+        <div class="db-kpi-icon db-kpi-icon--green">
+          <span class="material-icons">task_alt</span>
+        </div>
+        <div>
+          <p class="db-kpi-num">{{ sprintProgress }}%</p>
+          <p class="db-kpi-label">Sprint Complete</p>
+        </div>
+      </div>
+
+      <div class="db-kpi-card">
+        <div class="db-kpi-icon db-kpi-icon--orange">
+          <span class="material-icons">timer</span>
+        </div>
+        <div>
+          <p class="db-kpi-num">{{ sprintDaysLeft }}</p>
+          <p class="db-kpi-label">Days Left in Sprint</p>
+        </div>
+      </div>
+
+      <div class="db-kpi-card">
+        <div class="db-kpi-icon db-kpi-icon--teal">
+          <span class="material-icons">call_merge</span>
+        </div>
+        <div>
+          <p class="db-kpi-num">{{ prs.length }}</p>
+          <p class="db-kpi-label">Open PRs</p>
+        </div>
+      </div>
+
+      <div class="db-kpi-card">
+        <div [class]="'db-kpi-icon db-kpi-icon--' + (buildSuccessRate >= 80 ? 'green' : buildSuccessRate >= 50 ? 'orange' : 'red')">
+          <span class="material-icons">build_circle</span>
+        </div>
+        <div>
+          <p class="db-kpi-num">{{ buildSuccessRate }}%</p>
+          <p class="db-kpi-label">Build Success Rate</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Main grid ─────────────────────────────────────────────────────── -->
+    <div class="db-grid">
+
+      <!-- Left column: work item list + detail -->
+      <div class="db-col-main">
+
+        <!-- Tab bar -->
+        <div class="db-tabs">
+          <button class="db-tab" [class.active]="activeTab === 'mine'" (click)="setTab('mine')">
+            <span class="material-icons">assignment_ind</span>
+            My Items
+            <span class="db-tab-badge">{{ myItems.length }}</span>
+          </button>
+          <button class="db-tab" [class.active]="activeTab === 'sprint'" (click)="setTab('sprint')">
+            <span class="material-icons">sprint</span>
+            Sprint
+            <span class="db-tab-badge">{{ sprint.total }}</span>
+          </button>
+          <button class="db-tab" [class.active]="activeTab === 'prs'" (click)="setTab('prs')">
+            <span class="material-icons">call_merge</span>
+            Pull Requests
+            <span class="db-tab-badge">{{ prs.length }}</span>
+          </button>
+          <button class="db-tab" [class.active]="activeTab === 'builds'" (click)="setTab('builds')">
+            <span class="material-icons">build_circle</span>
+            Builds
+            <span class="db-tab-badge">{{ builds.length }}</span>
+          </button>
+        </div>
+
+        <!-- Work items list (mine / sprint) -->
+        <div *ngIf="activeTab === 'mine' || activeTab === 'sprint'" class="db-items-list">
+          <div *ngIf="currentTabItems.length === 0" class="db-empty-tab">
+            <span class="material-icons">check_circle_outline</span>
+            <p>No items found</p>
+          </div>
+          <div
+            *ngFor="let item of currentTabItems; trackBy: trackById"
+            class="db-item-row"
+            [class.selected]="selectedItem?.id === item.id"
+            (click)="selectItem(item)">
+            <div class="db-item-type-dot" [attr.data-color]="typeColor(item.type)"
+                 [matTooltip]="item.type">
+              <span class="material-icons">{{ typeIcon(item.type) }}</span>
+            </div>
+            <div class="db-item-body">
+              <div class="db-item-title-row">
+                <span class="db-item-id">#{{ item.id }}</span>
+                <span class="db-item-title">{{ item.title }}</span>
+              </div>
+              <div class="db-item-meta">
+                <span class="db-state-chip" [attr.data-color]="stateColor(item.state)">{{ item.state }}</span>
+                <span class="db-priority-chip" [attr.data-color]="priorityColor(item.priority)">
+                  {{ priorityLabel(item.priority) }}
+                </span>
+                <span *ngIf="item.storyPoints" class="db-points-chip">{{ item.storyPoints }} pts</span>
+                <span class="db-time">{{ relativeTime(item.changedDate) }}</span>
+              </div>
+            </div>
+            <button mat-icon-button class="db-open-btn" (click)="$event.stopPropagation(); openInAzure(item.url)"
+                    matTooltip="Open in Azure DevOps">
+              <span class="material-icons">open_in_new</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- PRs list -->
+        <div *ngIf="activeTab === 'prs'" class="db-items-list">
+          <div *ngIf="prs.length === 0" class="db-empty-tab">
+            <span class="material-icons">call_merge</span>
+            <p>No open pull requests</p>
+          </div>
+          <div *ngFor="let pr of prs; trackBy: trackById" class="db-pr-row">
+            <div class="db-pr-left">
+              <div class="db-pr-header">
+                <span class="db-item-id">#{{ pr.id }}</span>
+                <span class="db-draft-badge" *ngIf="pr.isDraft">Draft</span>
+                <span class="db-item-title">{{ pr.title }}</span>
+              </div>
+              <div class="db-pr-meta">
+                <span class="db-pr-branch mono">{{ shortBranch(pr.sourceBranch) }}</span>
+                <span class="material-icons db-pr-arrow">arrow_forward</span>
+                <span class="db-pr-branch mono">{{ pr.targetBranch }}</span>
+                <span class="db-time">{{ relativeTime(pr.creationDate) }}</span>
+                <span class="db-by">by {{ pr.createdBy }}</span>
+              </div>
+              <div class="db-pr-reviewers" *ngIf="pr.reviewers.length">
+                <span class="material-icons">rate_review</span>
+                <span>{{ pr.reviewers.slice(0, 3).join(', ') }}{{ pr.reviewers.length > 3 ? ' +' + (pr.reviewers.length - 3) : '' }}</span>
+              </div>
+            </div>
+            <button mat-icon-button class="db-open-btn" (click)="openInAzure(pr.url)"
+                    matTooltip="Open PR">
+              <span class="material-icons">open_in_new</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Builds list -->
+        <div *ngIf="activeTab === 'builds'" class="db-items-list">
+          <div *ngIf="builds.length === 0" class="db-empty-tab">
+            <span class="material-icons">build_circle</span>
+            <p>No recent builds</p>
+          </div>
+          <div *ngFor="let build of builds; trackBy: trackById" class="db-build-row">
+            <div class="db-build-result-icon" [attr.data-color]="buildResultColor(build.result)">
+              <span class="material-icons">{{ buildResultIcon(build.result) }}</span>
+            </div>
+            <div class="db-build-body">
+              <div class="db-build-title">
+                <span class="db-item-id">#{{ build.buildNumber }}</span>
+                <span class="db-item-title">{{ build.definition }}</span>
+              </div>
+              <div class="db-build-meta">
+                <span class="mono db-build-branch">{{ shortBranch(build.branch) }}</span>
+                <span class="db-time">{{ relativeTime(build.startTime) }}</span>
+                <span class="db-by">by {{ build.requestedBy }}</span>
+              </div>
+            </div>
+            <button mat-icon-button class="db-open-btn" (click)="openInAzure(build.webUrl)"
+                    matTooltip="View build">
+              <span class="material-icons">open_in_new</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right column: detail + sprint chart -->
+      <div class="db-col-side">
+
+        <!-- Selected item detail -->
+        <div *ngIf="selectedItem" class="db-detail-card">
+          <div class="db-detail-header">
+            <div class="db-detail-type" [attr.data-color]="typeColor(selectedItem.type)">
+              <span class="material-icons">{{ typeIcon(selectedItem.type) }}</span>
+              <span>{{ selectedItem.type }}</span>
+            </div>
+            <button mat-icon-button class="db-open-btn" (click)="openInAzure(selectedItem.url)"
+                    matTooltip="Open in Azure DevOps">
+              <span class="material-icons">open_in_new</span>
+            </button>
+          </div>
+          <p class="db-detail-id">#{{ selectedItem.id }}</p>
+          <h3 class="db-detail-title">{{ selectedItem.title }}</h3>
+
+          <div class="db-detail-grid">
+            <div class="db-detail-row">
+              <span class="db-detail-key">State</span>
+              <span class="db-state-chip" [attr.data-color]="stateColor(selectedItem.state)">{{ selectedItem.state }}</span>
+            </div>
+            <div class="db-detail-row">
+              <span class="db-detail-key">Priority</span>
+              <span class="db-priority-chip" [attr.data-color]="priorityColor(selectedItem.priority)">
+                {{ priorityLabel(selectedItem.priority) }}
+              </span>
+            </div>
+            <div class="db-detail-row" *ngIf="selectedItem.storyPoints">
+              <span class="db-detail-key">Points</span>
+              <span class="db-detail-val">{{ selectedItem.storyPoints }}</span>
+            </div>
+            <div class="db-detail-row" *ngIf="selectedItem.assignedTo">
+              <span class="db-detail-key">Assigned</span>
+              <span class="db-detail-val">{{ selectedItem.assignedTo }}</span>
+            </div>
+            <div class="db-detail-row">
+              <span class="db-detail-key">Changed</span>
+              <span class="db-detail-val">{{ relativeTime(selectedItem.changedDate) }}</span>
+            </div>
+            <div class="db-detail-row" *ngIf="selectedItem.iterationPath">
+              <span class="db-detail-key">Sprint</span>
+              <span class="db-detail-val mono db-detail-val--small">{{ selectedItem.iterationPath.split('\\').pop() }}</span>
+            </div>
+            <div class="db-detail-row" *ngIf="selectedItem.parentId">
+              <span class="db-detail-key">Parent</span>
+              <span class="db-detail-val">#{{ selectedItem.parentId }}</span>
+            </div>
+          </div>
+
+          <div class="db-detail-tags" *ngIf="selectedItem.tags.length">
+            <span *ngFor="let tag of selectedItem.tags" class="db-tag">{{ tag }}</span>
+          </div>
+
+          <div class="db-detail-desc" *ngIf="selectedItem.description">
+            <p class="db-detail-desc-label">Description</p>
+            <p class="db-detail-desc-text">{{ selectedItem.description }}</p>
+          </div>
+        </div>
+
+        <!-- Sprint breakdown chart -->
+        <div class="db-sprint-card" *ngIf="sprint.sprint">
+          <div class="db-sprint-header">
+            <div>
+              <p class="db-sprint-name">{{ sprint.sprint.name }}</p>
+              <p class="db-sprint-dates">
+                {{ sprint.sprint.startDate | date:'MMM d' }} –
+                {{ sprint.sprint.endDate   | date:'MMM d' }}
+              </p>
+            </div>
+            <div class="db-sprint-pct">{{ sprintProgress }}%</div>
+          </div>
+
+          <div class="db-sprint-bar">
+            <div class="db-sprint-bar-fill" [style.width.%]="sprintProgress"></div>
+          </div>
+
+          <p class="db-chart-label">Items by state</p>
+          <div class="db-state-bars">
+            <div *ngFor="let entry of sprintStateEntries" class="db-state-bar-row">
+              <span class="db-state-bar-label">{{ entry.state }}</span>
+              <div class="db-state-bar-track">
+                <div class="db-state-bar-fill"
+                     [style.width.%]="entry.pct"
+                     [attr.data-color]="stateColor(entry.state)"></div>
+              </div>
+              <span class="db-state-bar-count">{{ entry.count }}</span>
+            </div>
+          </div>
+
+          <p class="db-chart-label db-chart-label--top">Items by type</p>
+          <div class="db-type-chips">
+            <div *ngFor="let entry of (sprint.byType | keyvalue)" class="db-type-chip-row">
+              <span class="db-type-dot" [attr.data-color]="typeColor(entry.key)">
+                <span class="material-icons">{{ typeIcon(entry.key) }}</span>
+              </span>
+              <span class="db-type-name">{{ entry.key }}</span>
+              <span class="db-type-count">{{ entry.value }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- No sprint placeholder -->
+        <div class="db-sprint-card db-sprint-empty" *ngIf="!sprint.sprint">
+          <span class="material-icons">calendar_today</span>
+          <p>No active sprint found</p>
+        </div>
+
+      </div>
+
+    </div>
+
+  </ng-container>
+
+</div>
